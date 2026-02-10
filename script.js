@@ -64,7 +64,8 @@ document.addEventListener('DOMContentLoaded', () => {
         state.participants.push({
             id: generateId(),
             name: name,
-            pts: 0, w: 0, d: 0, l: 0
+            pts: 0, w: 0, d: 0, l: 0,
+            gf: 0, ga: 0, gd: 0
         });
 
         participantNameInput.value = '';
@@ -106,32 +107,60 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const renderParticipantsTable = () => {
-        // Sort by Points, then Wins
-        const sorted = [...state.participants].sort((a, b) => b.pts - a.pts || b.w - a.w);
+        const tbody = participantsTable.querySelector('tbody');
+        tbody.innerHTML = '';
 
-        participantsTableBody.innerHTML = '';
+        // Sort by Points -> Goal Difference -> Goals For
+        const sorted = [...state.participants].sort((a, b) => {
+            if (b.pts !== a.pts) return b.pts - a.pts;
+            if (b.gd !== a.gd) return b.gd - a.gd;
+            return b.gf - a.gf;
+        });
+
+        // Determine qualifying count
+        let qualifyCount = 0;
+        if (sorted.length >= 16) qualifyCount = 16;
+        else if (sorted.length >= 8) qualifyCount = 8;
+        else if (sorted.length >= 4) qualifyCount = 4;
+        else if (sorted.length >= 2) qualifyCount = 2;
+
         participantCountBadge.textContent = `${state.participants.length} Teams`;
 
         if (state.participants.length === 0) {
-            participantsTableBody.innerHTML = `<tr class="empty-state"><td colspan="7" style="text-align:center; padding:2rem;">No participants yet.</td></tr>`;
+            tbody.innerHTML = `<tr class="empty-state"><td colspan="8" style="text-align:center; padding:2rem;">No participants yet.</td></tr>`;
             return;
         }
 
         sorted.forEach((p, index) => {
             const tr = document.createElement('tr');
+            if (index < qualifyCount) {
+                tr.classList.add('qualified-row');
+            } else {
+                tr.classList.add('eliminated-row');
+            }
+
+            // Rank Display
+            let rankClass = 'rank-cell';
+            if (index === 0) rankClass += ' rank-1';
+            if (index === 1) rankClass += ' rank-2';
+            if (index === 2) rankClass += ' rank-3';
+
             tr.innerHTML = `
-                <td class="rank-cell rank-${index + 1}">#${index + 1}</td>
-                <td>${p.name}</td>
+                <td class="${rankClass}">#${index + 1}</td>
+                <td style="font-weight:600">${p.name}</td>
                 <td class="text-right"><strong>${p.pts}</strong></td>
                 <td class="text-right">${p.w}</td>
                 <td class="text-right">${p.d}</td>
                 <td class="text-right">${p.l}</td>
-                <td class="text-right">
+                <td class="text-right mobile-hide">${p.gf || 0}</td>
+                <td class="text-right mobile-hide">${p.ga || 0}</td>
+                <td class="text-right"><strong>${p.gd > 0 ? '+' + p.gd : p.gd || 0}</strong></td>
+                <td class="text-right actions-cell">
                     <button class="edit-btn btn btn-sm btn-secondary" onclick="window.editPart('${p.id}')">✏️</button>
-                    <button class="delete-btn btn btn-sm btn-secondary" onclick="window.deletePart('${p.id}')">🗑️</button>
+                    <button class="delete-btn btn btn-sm btn-secondary" onclick="window.deletePart('${p.id}')" style="color:var(--danger-color)">🗑️</button>
                 </td>
             `;
-            participantsTableBody.appendChild(tr);
+            tbody.appendChild(tr);
         });
     };
 
@@ -144,7 +173,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const resetLeague = () => {
         state.leagueMatches = [];
         state.knockoutRounds = [];
-        state.participants.forEach(p => { p.pts = 0; p.w = 0; p.d = 0; p.l = 0; });
+        state.participants.forEach(p => {
+            p.pts = 0; p.w = 0; p.d = 0; p.l = 0;
+            p.gf = 0; p.ga = 0; p.gd = 0;
+        });
         renderLeague();
         renderBracket();
     };
@@ -225,30 +257,56 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const recalculateStandings = () => {
-        // Reset stats
-        state.participants.forEach(p => { p.pts = 0; p.w = 0; p.d = 0; p.l = 0; });
+        // 1. REINICIAR TODAS LAS ESTADÍSTICAS (Incluyendo Goles)
+        state.participants.forEach(p => {
+            p.pts = 0;
+            p.w = 0;
+            p.d = 0;
+            p.l = 0;
+            // Agregamos esto que faltaba:
+            p.gf = 0;
+            p.ga = 0;
+            p.gd = 0;
+        });
 
-        // Apply scores
+        // 2. APLICAR RESULTADOS
         state.leagueMatches.forEach(m => {
             if (m.homeScore !== null && m.awayScore !== null) {
                 const home = state.participants.find(p => p.id === m.homeId);
                 const away = state.participants.find(p => p.id === m.awayId);
 
-                if (m.homeScore > m.awayScore) {
-                    if (home) { home.pts += 3; home.w++; }
-                    if (away) { away.l++; }
-                } else if (m.homeScore < m.awayScore) {
-                    if (away) { away.pts += 3; away.w++; }
-                    if (home) { home.l++; }
-                } else {
-                    if (home) { home.pts += 1; home.d++; }
-                    if (away) { away.pts += 1; away.d++; }
+                if (home && away) {
+                    // --- ESTO ES LO QUE FALTABA: SUMAR LOS GOLES ---
+                    // Goles a favor (GF)
+                    home.gf += m.homeScore;
+                    away.gf += m.awayScore;
+
+                    // Goles en contra (GA)
+                    home.ga += m.awayScore;
+                    away.ga += m.homeScore;
+
+                    // Diferencia de goles (GD)
+                    home.gd = home.gf - home.ga;
+                    away.gd = away.gf - away.ga;
+                    // -----------------------------------------------
+
+                    // Lógica de Puntos (Esto ya lo tenías bien)
+                    if (m.homeScore > m.awayScore) {
+                        home.pts += 3; home.w++;
+                        away.l++;
+                    } else if (m.homeScore < m.awayScore) {
+                        away.pts += 3; away.w++;
+                        home.l++;
+                    } else {
+                        home.pts += 1; home.d++;
+                        away.pts += 1; away.d++;
+                    }
                 }
             }
         });
 
-        // Update UI
-        renderParticipantsTable(); // Updates the table in the first tab
+        // Actualizar la tabla visual
+        renderParticipantsTable();
     };
 
     const renderLeague = () => {
@@ -305,10 +363,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // === KNOCKOUT LOGIC ===
     const generateKnockout = () => {
-        // 1. Get Sorted Teams
-        const sorted = [...state.participants].sort((a, b) => b.pts - a.pts || b.w - a.w);
+        // 1. Get Sorted Teams (Points > Goal Difference > Goals For)
+        const sorted = [...state.participants].sort((a, b) => {
+            if (b.pts !== a.pts) return b.pts - a.pts;
+            if (b.gd !== a.gd) return b.gd - a.gd;
+            return b.gf - a.gf;
+        });
 
-        // 2. Determine Bracket Size (2, 4, 8, 16)
+        // 2. Determine Bracket Size
         let size = 0;
         if (sorted.length >= 16) size = 16;
         else if (sorted.length >= 8) size = 8;
@@ -322,18 +384,43 @@ document.addEventListener('DOMContentLoaded', () => {
         // 3. Select Top N Teams
         const qualifiers = sorted.slice(0, size);
 
-        // 4. Create First Round Matches (Best vs Worst)
-        // 1 vs 16, 2 vs 15, etc.
-        const round1 = [];
-        for (let i = 0; i < size / 2; i++) {
-            round1.push({
-                matchId: generateId(),
-                homeId: qualifiers[i].id,
-                awayId: qualifiers[size - 1 - i].id,
-                winnerId: null,
-                nextMatchId: null // To be linked
-            });
+        // 4. Seeded Bracket Logic
+        // Manual pairings to ensure 1st and 2nd meet in Final
+        let pairings = [];
+        if (size === 2) {
+            pairings = [{ h: 0, a: 1 }]; // 1 vs 2
+        } else if (size === 4) {
+            pairings = [
+                { h: 0, a: 3 }, // 1 vs 4 (Top Half)
+                { h: 1, a: 2 }  // 2 vs 3 (Bottom Half)
+            ];
+        } else if (size === 8) {
+            // QF1: 1 vs 8, QF2: 4 vs 5 -> Winner SF1
+            // QF3: 3 vs 6, QF4: 2 vs 7 -> Winner SF2
+            // Bracket Order: QF1, QF2, QF3, QF4
+            pairings = [
+                { h: 0, a: 7 }, // 1 vs 8
+                { h: 3, a: 4 }, // 4 vs 5
+                { h: 2, a: 5 }, // 3 vs 6
+                { h: 1, a: 6 }  // 2 vs 7
+            ];
+        } else if (size === 16) {
+            // R16 Order: 1v16, 8v9, 4v13, 5v12 | 3v14, 6v11, 2v15, 7v10
+            pairings = [
+                { h: 0, a: 15 }, { h: 7, a: 8 },  // 1v16, 8v9
+                { h: 3, a: 12 }, { h: 4, a: 11 }, // 4v13, 5v12
+                { h: 2, a: 13 }, { h: 5, a: 10 }, // 3v14, 6v11
+                { h: 1, a: 14 }, { h: 6, a: 9 }   // 2v15, 7v10
+            ];
         }
+
+        const round1 = pairings.map(p => ({
+            matchId: generateId(),
+            homeId: qualifiers[p.h].id,
+            awayId: qualifiers[p.a].id,
+            winnerId: null,
+            nextMatchId: null
+        }));
 
         state.knockoutRounds = [round1];
 

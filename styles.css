@@ -468,3 +468,35 @@ footer {
     padding-top: 2rem;
     border-top: 1px solid var(--border-color);
 }
+@media (max-width: 600px) {
+    .main-header {
+        flex-direction: column;
+        gap: 1rem;
+        text-align: center;
+    }
+    
+    .header-controls {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .main-header h1 {
+        font-size: 1.5rem;
+    }
+}
+
+.qualified-row {
+    background-color: rgba(16, 185, 129, 0.1);
+    border-left: 3px solid var(--success-color);
+}
+
+.mobile-hide {
+    @media (max-width: 600px) {
+        display: none;
+    }
+}
+
+.eliminated-row {
+    background-color: rgba(239, 68, 68, 0.1);
+    border-left: 3px solid var(--danger-color);
+}
